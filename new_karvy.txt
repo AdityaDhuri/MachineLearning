@@ -1,0 +1,155 @@
+from dbfread import DBF
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import glob
+import os
+import mysql.connector as connection
+import mysql.connector as connection
+from datetime import date, datetime, timedelta
+import mysql.connector
+import openpyxl
+from sqlalchemy import create_engine
+from datetime import datetime
+
+import warnings
+warnings.filterwarnings("ignore")
+
+# Current time and formats it to the North American time of Month, Day, and Year.
+now = datetime.now()
+dt_string = now.strftime("%m-%d-%Y_%H-%M")
+#create directory
+
+
+cnx = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+cnx1 = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+engine = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+engine1 = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+engine2= create_engine('mysql+pymysql://root:12345@localhost/sapient')
+engine3 = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+
+print(engine)
+
+########### SQL QUERY ######################
+#########33 FOR KARVY ################
+sql_sap_master = "select SAP_SCH_NAME,AMC_RTA_CODE from sap_scheme_master where RTA = 'KFIN';"
+sql_sap_master_df = pd.read_sql(sql_sap_master,cnx)
+sql_sap_master_df.rename(columns={'SAP_SCH_NAME':'SCHEME'}, inplace = True)
+sql_sap_master_df.rename(columns={'AMC_RTA_CODE':'SCH_CODE'}, inplace = True)
+print(sql_sap_master_df)
+
+txn_type_master = "select SAP_Trxn_Code,SAP_Trxn_Type,TRDESC from txn_type_master where RTA = 'KFIN';"
+txn_type_master_df = pd.read_sql(txn_type_master,cnx)
+txn_type_master_df.rename(columns={'TRDESC':'RTA_TRXN_TYPE'}, inplace = True)
+txn_type_master_df.rename(columns={'SAP_Trxn_Type':'SAP_TRXN_TYPE'}, inplace = True)
+txn_type_master_df.rename(columns={'SAP_Trxn_Code':'SAP_TRXN_CODE'}, inplace = True)
+print(txn_type_master_df)
+
+files1 = glob.glob("E:\\Sapient Files\\KARVY-StampDuty\\Axis.DBF")
+frame = []
+# for file in files1:
+#     dbf1 = DBF(file,encoding='ISO-8859-1')
+#     frame.append(pd.DataFrame(iter(dbf1)))
+# df1 = pd.concat(frame)
+for file in files1:
+    print(file[46:-4])
+    source_filename = file[46:-4]
+    print(source_filename)
+    dbf_K = DBF(file,encoding='ISO-8859-1')
+    dbf3_K = pd.DataFrame(iter(dbf_K))
+    dbf3_K.loc[:, 'FILE_NAME'] = source_filename
+    frame.append(pd.DataFrame(dbf3_K))
+df1 = pd.concat(frame)
+print(df1.head())
+#rename column
+df1.rename(columns = {'INVNAME':'INV_NAME','PAN1':'PAN','TD_FUND':'AMC_CODE','FMCODE':'SCH_CODE','FUNDDESC':'RTA_SCHEME',
+                      'TD_ACNO':'FOLIO_NO','TD_TRTYPE':'TR_TYPE','TRNMODE':'TRXN_MODE','TD_PURRED':'TD_PURRED','TRFLAG':'TRFLAG',
+                      'TRDESC':'RTA_TRXN_TYPE','TD_TRNO':'TRXN_NO','TD_TRDT':'TRADE_DATE','TD_PRDT':'POST_DT','LOAD1':'LOAD_VAL',
+                      'TD_POP':'NAV','TD_UNITS':'UNITS','TD_AMT':'RTA_AMT','STT':'STT',
+                      'TDSAMOUNT':'TDS','NCTREMARKS':'TRXN_DETAIL','CITYCATEG5':'CITY_CAT','STATUS':'TAX_STATUS','DPID':'DP_ID',
+                      'CLIENTID':'CLIENT_ID','PRCODE1':'SRC_TRGT_SCHEME','SFUNDDT':'SRC_TRGT_SCHEME_DT',
+                      'TD_PTRNO':'SRC_TRGT_SCHEME_TRXN','PURDATE':'SRC_TRGT_SCHEME_PURDT','PURUNITS':'SRC_TRGT_SCHEME_PURUNIT',
+                      'PURAMT':'SRC_TRGT_SCHEME_PURAMT','SIPREGDT':'SIP_REGN_DT','DIVOPT':'DIV_OPTION','EUIN':'EUIN',
+                      'SUBARNCODE':'ARN_ASSO','TD_BROKER':'ASSO_CODE','BRANCHCODE':'BRANCHCODE','INWARDNUM0':'USRTRXNO','STAMPDUTY':'STAMP',
+                      'TD_AGENT':'ARN_MAIN','CRDATE':'FILE_DATE'
+                }, inplace = True)
+# extra column
+print('new file',df1.info())
+print('THE LENGTH OF KARVY FILE IS ',len(df1))
+
+############# DROPPING FILE_DATE AND CRTIME FROM DATAFRAME
+
+df1 = df1.drop(['FILE_DATE','CRTIME'], axis=1)
+
+############# MERGE #######################
+
+df1_1 = pd.merge(df1, sql_sap_master_df, on='SCH_CODE', how='left')
+result_df1 =pd.merge(df1_1,txn_type_master_df,on='RTA_TRXN_TYPE', how='left')
+
+print("LENGTH OF DATAFRAME IN  KARVY IS ",len(result_df1))
+
+################################ UPPER CASING ASSO_CODE #################
+
+result_df1['ASSO_CODE'] = result_df1['ASSO_CODE'].str.upper()
+result_KARVY_F = result_df1.replace('',np.nan,regex=True)
+result_KARVY_F = pd.DataFrame(result_df1)
+print(len(result_KARVY_F))
+
+########################################### TI TO LOGIC
+
+df_TI = result_KARVY_F.query("TRFLAG=='TI'")
+print(len(df_TI))
+
+df3= result_KARVY_F[result_KARVY_F['FOLIO_NO'].isin(df_TI['FOLIO_NO']) & result_KARVY_F['RTA_SCHEME'].isin(df_TI['RTA_SCHEME']) & result_KARVY_F['TRXN_NO'].isin(df_TI['TRXN_NO']) & result_KARVY_F['UNITS'].isin(df_TI['UNITS']) & result_KARVY_F['UNQNO'].isin(df_TI['UNQNO'])].query("TRFLAG!='TI'")
+
+print(df3)
+print(len(df3))
+print(df3['TRFLAG'].unique())
+
+i1 = pd.MultiIndex.from_frame(result_KARVY_F)
+i2 = pd.MultiIndex.from_frame(df3)
+i3 = df1[~i1.isin(i2)]
+print('LENGTH OF NEW DF ',len(i3))
+karvy_neew = pd.DataFrame(i3)
+
+df_TO = karvy_neew.query("TRFLAG=='TO'")
+print(len(df_TO))
+
+df5= karvy_neew[karvy_neew['FOLIO_NO'].isin(df_TO['FOLIO_NO']) & karvy_neew['RTA_SCHEME'].isin(df_TO['RTA_SCHEME']) & karvy_neew['TRXN_NO'].isin(df_TO['TRXN_NO']) & karvy_neew['UNITS'].isin(df_TO['UNITS']) & karvy_neew['UNQNO'].isin(df_TO['UNQNO'])]
+print(df5['TRFLAG'].unique())
+print(len(df5))
+i6 = pd.MultiIndex.from_frame(karvy_neew)
+i4 = pd.MultiIndex.from_frame(df5)
+i5 = karvy_neew[~i6.isin(i4)]
+last = pd.DataFrame(i5)
+print(len(i5))
+#################### REMOVING DUPLICATES in KARVY #######################
+
+result_duplicate1 = last.loc[last.duplicated(subset=last.columns.difference(['TDS','NAV','STT','STAMP','PORTDT','SCHPLN','RTA_SCHEME','TD_PURRED','SMCODE','CHQNO','TRNSTAT','TD_BRANCH','ISCTRNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPER','BROKCOMM','INVID','TRNSUB','TD_APPNO','CHQDATE','CHQBANK','DIV_OPTION','SRC_TRGT_SCHEME_PURAMT','SRC_TRGT_SCHEME_PURDT','SRC_TRGT_SCHEME_DT','TD_NAV','SRC_TRGT_SCHEME_TRXN','LOADPER','SRC_TRGT_SCHEME_PURUNIT','IHNO','BRANCHCODE','USRTRXNO','TRXN_DETAIL','NAVDATE','PAN2','PAN3','SCH1','PLN1','SRC_TRGT_SCHEME','TD_TRXNMO1','CLIENT_ID','TAX_STATUS','REJTRNOOR2','SUBTRTYPE','TRCHARGES','ATMCARDST3','ATMCARDRE4','BROK_ENTDT','SCHEMEISIN','CITY_CAT','PORTDT','EUIN','EDECLFLAG','ARN_ASSO','EVALID','ASSETTYPE','SIP_REGN_DT','DIVPER','GUARDPANNO','CAN','EXCHORGTR6','ELECTRXNF7','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep=False),:]
+result_duplicate1 = pd.DataFrame(result_duplicate1)
+
+
+result_duplicate1.to_sql(con=engine, name='karvy__dup', if_exists='replace', index=False)
+# result_duplicate1.to_csv('E:\\new\\Duplicate_KARVY_10_Nov.csv', index=False, encoding="utf-8")
+
+################ DROPPING ALL DUPLICATES FROM KARVY EXCLUDING THE FILE_NAME ################
+
+result_KARVY2 = last.drop_duplicates(subset=last.columns.difference(['TDS','NAV','STT','STAMP','PORTDT','SCHPLN','RTA_SCHEME','TD_PURRED','SMCODE','CHQNO','TRNSTAT','TD_BRANCH','ISCTRNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPER','BROKCOMM','INVID','TRNSUB','TD_APPNO','CHQDATE','CHQBANK','DIV_OPTION','SRC_TRGT_SCHEME_PURAMT','SRC_TRGT_SCHEME_PURDT','SRC_TRGT_SCHEME_DT','TD_NAV','SRC_TRGT_SCHEME_TRXN','LOADPER','SRC_TRGT_SCHEME_PURUNIT','IHNO','BRANCHCODE','USRTRXNO','TRXN_DETAIL','NAVDATE','PAN2','PAN3','SCH1','PLN1','SRC_TRGT_SCHEME','TD_TRXNMO1','CLIENT_ID','TAX_STATUS','REJTRNOOR2','SUBTRTYPE','TRCHARGES','ATMCARDST3','ATMCARDRE4','BROK_ENTDT','SCHEMEISIN','CITY_CAT','PORTDT','EUIN','EDECLFLAG','ARN_ASSO','EVALID','ASSETTYPE','SIP_REGN_DT','DIVPER','GUARDPANNO','CAN','EXCHORGTR6','ELECTRXNF7','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+
+print('THE LENGTH OF KARVY FILE AFTER REMOVING DUPLICATES',len(result_KARVY2))
+print("LENGTH OF DUPLICATES IN  KARVY IS ",len(result_KARVY_F)-len(result_KARVY2))
+#
+# result_KARVY2.to_csv('E:\\new\\Final_KARVY_10_Nov.csv', index=False, encoding="utf-8")
+result_KARVY2.to_sql(con=engine3, name='karvy_10_februrary', if_exists='replace', index=False)
+####################################### KARVY ENDED #####################################
+

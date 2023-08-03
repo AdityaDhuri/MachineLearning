@@ -1,0 +1,168 @@
+from dbfread import DBF
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import glob
+import mysql.connector as connection
+import mysql.connector as connection
+from datetime import date, datetime, timedelta
+import mysql.connector
+
+from sqlalchemy import create_engine
+
+import warnings
+warnings.filterwarnings("ignore")
+
+cnx = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+engine = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+###################3 KARVY ########################33
+####################### ADDITION
+Purchase_txn_master_qry = ("select TRDESC,TREATMENT_TO_UNITS from txn_type_master where rta = 'KFIN'  and treatment_to_units in ('Addition');")
+P_df=pd.read_sql(Purchase_txn_master_qry,cnx)
+P_TRDESC_list = P_df['TRDESC'].tolist()
+print(P_TRDESC_list)
+
+####################### SUBTRACTION ###############
+Sale_txn_master_qry = ("select TRDESC,TREATMENT_TO_UNITS from txn_type_master where rta = 'KFIN'  and treatment_to_units in ('Subtraction');")
+s_df=pd.read_sql(Sale_txn_master_qry,cnx)
+S_TRDESC_list = s_df['TRDESC'].tolist()
+print(S_TRDESC_list)
+print(len(S_TRDESC_list))
+
+######################## SQL QUERY ##############
+sql_txn_master = "select TRDESC,TREATMENT_TO_UNITS,SAP_TRXN_TYPE from txn_type_master where rta = 'KFIN'  and treatment_to_units in ('Addition','Subtraction');"
+sql_txn_master_df = pd.read_sql(sql_txn_master,cnx)
+sql_txn_master_df.rename(columns={'TRDESC':'RTA_TRXN_TYPE'}, inplace = True)
+sql_txn_master_list = sql_txn_master_df['RTA_TRXN_TYPE'].tolist()
+print(sql_txn_master_df)
+
+######################## READING TRANSACTION DATA FROM SQL #########
+
+# df_file = pd.read_csv('E:\\csv\\KFIN\\Karvyall_08Feb23 (1).csv')
+# df_file2 = pd.DataFrame(df_file)
+# print(df.info())
+# print(df['RTA_TRXN_TYPE'].unique())
+# print(len(df))
+#############################to be deleted
+df = ("SELECT * FROM karvy_no_duplicate;")
+df1 =pd.read_sql(df,cnx)
+print(len(df1))
+# df1 = df_a.drop_duplicates(subset=df_a.columns.difference(['NAV','STT','STAMP','PORTDT','SCHPLN','RTA_SCHEME','TD_PURRED','SMCODE','CHQNO','TRNSTAT','TD_BRANCH','ISCTRNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPER','BROKCOMM','INVID','TRNSUB','TD_APPNO','UNQNO','CHQDATE','CHQBANK','DIV_OPTION','SRC_TRGT_SCHEME_PURAMT','SRC_TRGT_SCHEME_PURDT','SRC_TRGT_SCHEME_DT','TD_NAV','SRC_TRGT_SCHEME_TRXN','LOADPER','SRC_TRGT_SCHEME_PURUNIT','IHNO','BRANCHCODE','USRTRXNO','TRXN_DETAIL','NAVDATE','PAN2','PAN3','SCH1','PLN1','SRC_TRGT_SCHEME','TD_TRXNMO1','CLIENT_ID','TAX_STATUS','REJTRNOOR2','SUBTRTYPE','TRCHARGES','ATMCARDST3','ATMCARDRE4','BROK_ENTDT','SCHEMEISIN','CITY_CAT','PORTDT','NEWUNQNO','EUIN','EDECLFLAG','ARN_ASSO','EVALID','ASSETTYPE','SIP_REGN_DT','DIVPER','GUARDPANNO','CAN','EXCHORGTR6','ELECTRXNF7','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+
+df_TI = df1.query("TRFLAG=='TI'")
+print(len(df_TI))
+
+df3= df1[df1['FOLIO_NO'].isin(df_TI['FOLIO_NO']) & df1['RTA_SCHEME'].isin(df_TI['RTA_SCHEME']) & df1['TRXN_NO'].isin(df_TI['TRXN_NO']) & df1['UNITS'].isin(df_TI['UNITS']) & df1['UNQNO'].isin(df_TI['UNQNO'])].query("TRFLAG!='TI'")
+
+print(df3)
+print(len(df3))
+print(df3['TRFLAG'].unique())
+
+i1 = pd.MultiIndex.from_frame(df1)
+i2 = pd.MultiIndex.from_frame(df3)
+i3 = df1[~i1.isin(i2)]
+print('LENGTH OF NEW DF ',len(i3))
+karvy_neew = pd.DataFrame(i3)
+
+df_TO = df1.query("TRFLAG=='TO'")
+print(len(df_TO))
+
+# df4= karvy_neew[karvy_neew['FOLIO_NO'].isin(df_TO['FOLIO_NO']) & karvy_neew['RTA_SCHEME'].isin(df_TO['RTA_SCHEME']) & karvy_neew['TRXN_NO'].isin(df_TO['TRXN_NO']) & karvy_neew['UNITS'].isin(df_TO['UNITS']) & karvy_neew['UNQNO'].isin(df_TO['UNQNO'])].query("TRFLAG!='TO'")
+df5= karvy_neew[karvy_neew['FOLIO_NO'].isin(df_TO['FOLIO_NO']) & karvy_neew['RTA_SCHEME'].isin(df_TO['RTA_SCHEME']) & karvy_neew['TRXN_NO'].isin(df_TO['TRXN_NO']) & karvy_neew['UNITS'].isin(df_TO['UNITS']) & karvy_neew['UNQNO'].isin(df_TO['UNQNO'])]
+print(df5['TRFLAG'].unique())
+print(len(df5))
+i6 = pd.MultiIndex.from_frame(karvy_neew)
+i4 = pd.MultiIndex.from_frame(df5)
+i5 = karvy_neew[~i6.isin(i4)]
+last = pd.DataFrame(i5)
+print(len(i5))
+#######################to be deleted later
+# df_q = "select * from karvy_16feb_all;"
+# last = pd.read_sql(df_q,cnx)
+print(len(last))
+last['POST_DT'] = pd.to_datetime(last['POST_DT'], format='%Y-%m-%d')
+df = last[(last['POST_DT'] < "2023-02-02")]
+print(df['RTA_TRXN_TYPE'].unique())
+print(len(df))
+# print(len(df_file2))
+# df1 = df_file2.append(df_query2)
+# df1 = df_file2.replace('',np.nan,regex=True)
+# print(len(df1))
+# before apllyling tds we got 40/ all karvy
+df = df.drop_duplicates(subset=df.columns.difference(['TDS','NAV','STT','STAMP','PORTDT','SCHPLN','RTA_SCHEME','TD_PURRED','SMCODE','CHQNO','TRNSTAT','TD_BRANCH','ISCTRNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPER','BROKCOMM','INVID','TRNSUB','TD_APPNO','CHQDATE','CHQBANK','DIV_OPTION','SRC_TRGT_SCHEME_PURAMT','SRC_TRGT_SCHEME_PURDT','SRC_TRGT_SCHEME_DT','TD_NAV','SRC_TRGT_SCHEME_TRXN','LOADPER','SRC_TRGT_SCHEME_PURUNIT','IHNO','BRANCHCODE','USRTRXNO','TRXN_DETAIL','NAVDATE','PAN2','PAN3','SCH1','PLN1','SRC_TRGT_SCHEME','TD_TRXNMO1','CLIENT_ID','TAX_STATUS','REJTRNOOR2','SUBTRTYPE','TRCHARGES','ATMCARDST3','ATMCARDRE4','BROK_ENTDT','SCHEMEISIN','CITY_CAT','PORTDT','EUIN','EDECLFLAG','ARN_ASSO','EVALID','ASSETTYPE','SIP_REGN_DT','DIVPER','GUARDPANNO','CAN','EXCHORGTR6','ELECTRXNF7','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+
+# df = df1.drop_duplicates(subset=df1.columns.difference(['INWARDNO0','UNQNO','TD_APPNO','BROKPER','CRTIME','BROKCOMM','EVALID','INVID','TD_BRANCH','ASSETTYPE','TRCHARGES','TRNSTAT','TRNSUB','SUBTRTYPE','CLIENT_NAME','AMC','RTA_SCHEME','SCHEME','SCHEME_TYPE','TD_PURRED','SAP_TRXN_CODE','SAP_TRXN_TYPE','RTA_AMT','AMOUNT','TRXN_DETAIL','TRXN_REMARK','ZONE','BRANCH','TL','ASSOCIATE','RM','REFERRAL','CITY_CAT','TAX_STATUS','CLIENT_ID','SRC_TRGT_SCHEME','SRC_TRGT_SCHEME_DT','SRC_TRGT_SCHEME_TRXN','SRC_TRGT_SCHEME_PURDT','SRC_TRGT_SCHEME_PURUNIT','SRC_TRGT_SCHEME_PURAMT','SIP_REGN_DT','DIV_OPTION','EUIN','ARN_ASSO','ASSO_CODE','SRC_BROKER','OLD_FOLIO','BRANCHCODE','ARN_MAIN','PORTDT','SIPTRXNNO','FILE_DATE','FILE_NAME']),keep='first')
+# df = df1.drop_duplicates(subset=df1.columns.difference(['POST_DT','PAN2','GUARDPANNO','CHQNO','TRNSUB','INV_NAME','ARN_ASSO','SUBTRTYPE','CHQBANK','TAX_STATUS','CAN','BROK_ENDT','CHQDATE','EDECLFLAG','SIP_REGN_DT','PLN1','TRXN_DETAIL','SRC_TRGT_SCHEME','TD_NAV','RTA_AMT','EVALID','ASSO_CODE','REJTRNOOR2','TD_APPNO','CITY_CAT','FILE_NAME']),keep='first')
+print(len(df))
+# df.to_sql(con=engine, name='karvy_test1', if_exists='replace',index=False)
+
+#################### KARVY AGG LOGIC ###################
+
+df_normal= df[df.RTA_TRXN_TYPE.isin(sql_txn_master_list)]
+
+ongoing_df=df_normal[df_normal['UNITS'] != 0.0]
+
+##################### MERGE
+# result_df = pd.merge(ongoing_df,sql_txn_master_df,on='RTA_TRXN_TYPE',how='inner')
+
+ongoing_df_type = ongoing_df['RTA_TRXN_TYPE']
+result_df_txn_type= pd.DataFrame(ongoing_df_type)
+result_df_txn_type2 = ongoing_df['UNITS']
+result_df_txn_type2= pd.DataFrame(result_df_txn_type2)
+result_df_txn_type.rename(columns={'RTA_TRXN_TYPE':'RTA_TRXN_TYPE_'},inplace=True)
+result_df_txn_type2.rename(columns={'UNITS':'UNIT'},inplace=True)
+result_df=pd.concat([ongoing_df,result_df_txn_type,result_df_txn_type2],axis=1)
+
+print("len of result_df",len(result_df))
+########################
+result_df['RTA_TRXN_TYPE'] =np.where(result_df.RTA_TRXN_TYPE.isin(P_TRDESC_list), 'Purchase', result_df.RTA_TRXN_TYPE)
+
+result_df['RTA_TRXN_TYPE'] =np.where(result_df.RTA_TRXN_TYPE.isin(S_TRDESC_list), 'Sales', result_df.RTA_TRXN_TYPE)
+print(len(result_df['RTA_TRXN_TYPE']))
+print(result_df[['RTA_TRXN_TYPE','UNITS']])
+df1=result_df.pivot_table(index=['FOLIO_NO','PAN','SCHEME'], columns='RTA_TRXN_TYPE',
+                     values=['RTA_AMT'], aggfunc='sum', fill_value=0)
+print(df1)
+#change to pandas dataframe
+df1.columns = df1.columns.droplevel(0) #remove amount
+df1.columns.name = None               #remove categories
+df1 = df1.reset_index()
+
+# df1['Sum_Amount']= df1['Purchase']
+df1['Sum_Amount']= df1['Purchase'] - df1['Sales']
+DF_FOLIO_NUM=df1['FOLIO_NO']
+DF_AMOUNT=df1['Sum_Amount']
+print(DF_FOLIO_NUM)
+print('&&&',result_df[['RTA_TRXN_TYPE','UNITS']])
+
+#pivot table for units
+df_units=result_df.pivot_table(index=['FOLIO_NO','PAN','SCHEME'], columns='RTA_TRXN_TYPE',
+                     values=['UNITS'], aggfunc='sum', fill_value=0)
+
+df_units.columns = df_units.columns.droplevel(0) #remove amount
+df_units.columns.name = None               #remove categories
+df_units = df_units.reset_index()
+print(df_units['Purchase'])
+# df_units['Sum_UNITS'] = df_units['Purchase']
+df_units['Sum_UNITS'] = df_units['Purchase'] - df_units['Sales']
+
+print(df_units)
+df_pan = df_units['PAN']
+df_u=df_units['Sum_UNITS']
+df_scheme = df_units['SCHEME']
+#conact datafarme
+result_txn_agg_df = pd.concat([DF_FOLIO_NUM,df_scheme,df_pan,df_u,DF_AMOUNT], axis=1)
+#########################################################33#######################################################33
+print(result_txn_agg_df['Sum_UNITS'])
+
+############ TO CSV
+# result_txn_agg_df.to_csv('E:\\new\\karvy_agg_14_feb3_new1.csv', index=False, encoding="utf-8")
+print("CSV DONE")
+result_txn_agg_df.to_sql(con=engine, name='karvy_agg_16_feb_tds', if_exists='replace',index=False)
+print('txn going onn')
+# df1.to_sql(con=engine, name='karvy_13_feb', if_exists='replace',index=False) wrong df1

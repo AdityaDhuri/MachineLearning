@@ -1,0 +1,165 @@
+from dbfread import DBF
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import glob
+import mysql.connector as connection
+import mysql.connector as connection
+from datetime import date, datetime, timedelta
+import mysql.connector
+
+from sqlalchemy import create_engine
+
+import warnings
+
+
+
+warnings.filterwarnings("ignore")
+
+cnx = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+engine = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+
+####################### ADDITION
+Purchase_txn_master_qry = ("select TRDESC,TREATMENT_TO_UNITS from txn_type_master where rta = 'KFIN'  and treatment_to_units in ('Addition');")
+print(Purchase_txn_master_qry)
+P_df=pd.read_sql(Purchase_txn_master_qry,cnx)
+P_TRDESC_list = P_df['TRDESC'].tolist()
+print(P_TRDESC_list)
+
+####################### SUBTRACTION
+Sale_txn_master_qry = ("select TRDESC,TREATMENT_TO_UNITS from txn_type_master where rta = 'KFIN'  and treatment_to_units in ('Subtraction');")
+print(Sale_txn_master_qry)
+s_df=pd.read_sql(Sale_txn_master_qry,cnx)
+S_TRDESC_list = s_df['TRDESC'].tolist()
+print(S_TRDESC_list)
+print(len(S_TRDESC_list))
+
+######################## SQL QUERY
+sql_txn_master = "select TRDESC,Treatment_to_Units from txn_type_master where rta = 'KFIN'  and Treatment_to_Units in ('Addition','Subtraction');"
+sql_txn_master_df = pd.read_sql(sql_txn_master,cnx)
+sql_txn_master_df.rename(columns={'TRDESC':'RTA_TRXN_TYPE'}, inplace = True)
+sql_txn_master_list = sql_txn_master_df['RTA_TRXN_TYPE'].tolist()
+print(sql_txn_master_df)
+
+######################## READING CSV
+
+
+# files2 = glob.glob("E:\\Sapient Files\\MFSD201_Trxn Data_Since inception till 31.12.2021\\MFSD201_Trxn 1.DBF")
+# frame2 = []
+# for file in files2:
+#     print(file[35:-4])
+#     source_filename = file[34:-4]
+#     print(source_filename)
+#     dbf1 = DBF(file,encoding='ISO-8859-1')
+#     dbf3 = pd.DataFrame(iter(dbf1))
+#     dbf3.loc[:, 'FILE_NAME'] = source_filename
+#     frame2.append(pd.DataFrame(dbf3))
+#
+# df2 = pd.concat(frame2)
+#       #####Append
+#     # frame2 = []
+# print(len(df2))
+
+#    DBF_append2 = pd.concat(frame2)
+#    DBF_append = pd.DataFrame(DBF_append2)
+# print(df.head())
+# #######################  DROP DUPLICATES
+# df = daf.drop_duplicates()
+#
+daf = ("select * from union_ti;")
+df =pd.read_sql(daf,cnx)
+df_normal= df[df.RTA_TRXN_TYPE.isin(sql_txn_master_list)]
+
+print("################## ALL FILES LOADED ###############")
+
+
+df_normal= df[df.RTA_TRXN_TYPE.isin(sql_txn_master_list)]
+
+print('LENGTH OF KARVY FILE IS ', len(df))
+
+print("################## ALL FILES LOADED ###############")
+
+#################### MERGE AND RENAME #########################################
+
+result_df = pd.merge(df_normal,sql_txn_master_df,on='RTA_TRXN_TYPE',how='inner')
+print('LENGTH OF KARVY FILE AFTER MATCHING RTA_TRXN_TYPE IS ',len(result_df))
+print(result_df.info())
+result_df_txn_type = result_df['RTA_TRXN_TYPE']
+result_df_txn_type= pd.DataFrame(result_df_txn_type)
+result_df_txn_type2 = result_df['UNITS']
+result_df_txn_type2= pd.DataFrame(result_df_txn_type2)
+result_df_txn_type.rename(columns={'RTA_TRXN_TYPE':'RTA_TRXN_TYPE_'},inplace=True)
+result_df_txn_type2.rename(columns={'UNITS':'UNIT'},inplace=True)
+result_df=pd.concat([result_df,result_df_txn_type,result_df_txn_type2],axis=1)
+
+print("len of result_df",result_df.info())
+print(("################# MERGE COMPLETE ######################"))
+########################
+result_df['RTA_TRXN_TYPE'] =np.where(result_df.RTA_TRXN_TYPE.isin(P_TRDESC_list), 'Purchase', result_df.RTA_TRXN_TYPE)
+
+result_df['RTA_TRXN_TYPE'] =np.where(result_df.RTA_TRXN_TYPE.isin(S_TRDESC_list), 'Sales', result_df.RTA_TRXN_TYPE)
+
+
+df1=result_df.pivot_table(index=['FOLIO_NO','RTA_SCHEME','INV_NAME','PAN','SCHEME','SAP_TRXN_TYPE'], columns='RTA_TRXN_TYPE',
+                     values=['RTA_AMT'], aggfunc='sum', fill_value=0)
+
+#change to pandas dataframe
+df1.columns = df1.columns.droplevel(0) #remove amount
+df1.columns.name = None               #remove categories
+df1 = df1.reset_index()
+
+df1['Sum_Amount']=  df1['Purchase']  - df1['Sales']
+
+DF_FOLIO_NUM=df1['FOLIO_NO']
+DF_AMOUNT=df1['Sum_Amount']
+DF_SCHEME=df1['SCHEME']
+DF_SAP=df1['RTA_SCHEME']
+DF_SAP_TXN = df1['SAP_TRXN_TYPE']
+print(DF_FOLIO_NUM)
+print(df1.info())
+#pivot table for units
+df_units=result_df.pivot_table(index=['FOLIO_NO','RTA_SCHEME','INV_NAME','PAN','SCHEME','SAP_TRXN_TYPE'], columns='RTA_TRXN_TYPE',
+                     values=['UNITS'], aggfunc='sum', fill_value=0)
+
+df_units.columns = df_units.columns.droplevel(0) #remove amount
+df_units.columns.name = None               #remove categories
+df_units = df_units.reset_index()
+
+df_units['Sum_UNITS'] = df_units['Purchase']  - df_units['Sales']
+print(df_units)
+print(df_units.info())
+
+df_u=df_units['Sum_UNITS']
+df_pan=df_units['PAN']
+df_INV_NAME=df_units['INV_NAME']
+df_sap=df_units['RTA_SCHEME']
+df_sap_txn_type = df_units['SAP_TRXN_TYPE']
+#conact datafarme
+result_txn_agg_df = pd.concat([DF_FOLIO_NUM,DF_SCHEME,df_INV_NAME,df_u,DF_AMOUNT,df_pan,df_sap,df_sap_txn_type], axis=1)
+print("data loaded in the table")
+
+# result_df.insert(0, 'unique_id', range(999999999999, 999999999999 + len(result_df['FOLIO_NO'])))
+result_df = result_df.sort_values(by='TRADE_DATE', ascending=True, ignore_index=True)
+
+result_df_units=result_df.pivot_table(index=['INV_NAME','FOLIO_NO','PAN','SCHEME','TRXN_NO','TRADE_DATE','NAV','RTA_TRXN_TYPE_','RTA_SCHEME','SAP_TRXN_TYPE','RTA_AMT','UNIT'], columns='RTA_TRXN_TYPE',
+                     values=['UNITS'], aggfunc='sum', fill_value=0)
+
+
+result_df_units.columns = result_df_units.columns.droplevel(0) #remove amount
+result_df_units.columns.name = None               #remove categories
+result_df_units = result_df_units.reset_index()
+
+result_df_units = result_df_units.sort_values(by='TRADE_DATE', ascending=True, ignore_index=True)
+
+result_df_units['sum_unit'] = result_df_units.groupby(['FOLIO_NO','RTA_SCHEME'])['Purchase'].cumsum()
+result_df_units['Subtract_unit'] = result_df_units.groupby(['FOLIO_NO','RTA_SCHEME'])['Sales'].cumsum()
+result_df_units['BALANCE']=result_df_units['sum_unit']-result_df_units['Subtract_unit']
+print(result_df_units['BALANCE'])
+print(len(result_df_units))
+result_df_units.to_sql(con=engine, name='karvy_union_ti_28_nov_bal', if_exists='replace',index=False)
+

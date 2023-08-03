@@ -1,0 +1,154 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from pyspark.sql.functions import *
+from pyspark.sql.window import Window
+import pyspark.sql.types as T
+import pyspark.sql.functions as F
+from datetime import datetime
+from pyspark.sql.types import BooleanType,DateType,IntegerType,TimestampType, LongType
+import boto3
+import quinn
+from pyspark.sql.functions import expr
+import pg8000 as pg
+import time
+import pytz
+
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+# job.init(args['JOB_NAME'], args)
+
+s3 = boto3.resource('s3')
+
+IST = pytz.timezone('Asia/Kolkata')
+curr_date= datetime.today().strftime('%Y-%m-%d')
+
+
+filepath='s3://mum-dev-sap-on-premises-data-sftp/Transaction_files/FRANKLIN2.csv'
+filepath1="s3://mum-dev-sap-on-premises-data-sftp/Master Data/Scheme Master.csv"
+
+#################################Map with Scheme Master################################
+df_txn_cams = spark.read.format('csv').options(header='True',inferSchema='True',sep=',').load(filepath)
+
+
+print('df_txn_cams',df_txn_cams.count())
+
+df_scheme = spark.read \
+    .format("jdbc") \
+    .option("url","jdbc:postgresql://mum-pgsql-rds-db-1.cfixywydcw2x.ap-south-1.rds.amazonaws.com:5432/mum_sap_pgsql_db") \
+    .option("driver", "org.postgresql.Driver") \
+    .option("user", "sap_postgres_rds") \
+    .option("password", "Sapient123") \
+    .option("query","select SAP_SCH_NAME,AMC_RTA_CODE from sap_scheme_master where RTA = 'CAMS'").load()
+    
+df_scheme.show()
+df_scheme = df_scheme.withColumnRenamed("SAP_SCH_NAME","SCHEME")
+    
+df_txn_type = spark.read \
+    .format("jdbc") \
+    .option("url","jdbc:postgresql://mum-pgsql-rds-db-1.cfixywydcw2x.ap-south-1.rds.amazonaws.com:5432/mum_sap_pgsql_db") \
+    .option("driver", "org.postgresql.Driver") \
+    .option("user", "sap_postgres_rds") \
+    .option("password", "Sapient123") \
+    .option("query","select SAP_Trxn_Code,SAP_Trxn_Type,TRDESC from txn_type_master where RTA = 'CAMS'").load()
+
+df_txn_type.show(2)
+    
+mapping = {'INV_NAME':'INV_NAME',
+'PAN':'PAN',
+'AMC_CODE':'AMC_CODE',
+'PRODCODE':'SCH_CODE',
+'SCHEME':'RTA_SCHEME',
+'FOLIO_NO':'FOLIO_NO',
+'TRXNTYPE':'TR_TYPE',
+'TRXNMODE':'TRXN_MODE',
+'TRXN_TYPE_':'RTA_TRXN_TYPE',
+'TRXNNO':'TRXN_NO',
+'TRADDATE':'TRADE_DATE',
+'POSTDATE':'POST_DT',
+'LOAD':'LOAD_VAL',
+'PURPRICE':'NAV',
+'UNITS':'UNITS',
+'AMOUNT':'RTA_AMT',
+'STAMP_DUTY':'STAMP',
+'STT':'STT',
+'TOTAL_TAX':'TDS',
+'TRXN_NATUR':'TRXN_DETAIL',
+'TRXN_SUFFI':'TRXN_REMARK',
+'TER_LOCATI':'CITY_CAT',
+'TAX_STATUS':'TAX_STATUS',
+'DP_ID':'DP_ID',
+'TARG_SRC_S':'SRC_TRGT_SCHEME',
+'SIPTRXNNO':'SRC_TRGT_SCHEME_TRXN',
+'REINVEST_F':'DIV_OPTION',
+'EUIN':'EUIN',
+'SUB_BRK_AR':'ARN_ASSO',
+'SUBBROK':'ASSO_CODE',
+'SRC_BRK_CO':'SRC_BROKER',
+'OLD_FOLIO':'OLD_FOLIO',
+'USERCODE':'BRANCHCODE',
+'USRTRXNO':'USRTRXNO',
+'BROKCODE':'ARN_MAIN',
+'REP_DATE':'FILE_DATE'}
+
+def source_to_target(s):
+    return mapping[s]
+
+
+def change_col_name(s):
+    return s in mapping
+    
+df_txn_cams = quinn.with_some_columns_renamed(source_to_target, change_col_name)(df_txn_cams)
+print(df_txn_cams.show(2))
+print('THE LENGTH OF CAMS FILE IS ',df_txn_cams.count(),df_txn_cams.count())
+
+############ DROPPING FILE_DATE AND CRTIME FROM DATAFRAME
+
+df_txn_cams.drop('SL_NO','FILE_DATE')
+
+print("@@@@@@@@@@@@$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+
+df_txn_cams.select('TR_TYPE').distinct().show()
+df_txn_cams.select('RTA_TRXN_TYPE').distinct().show()
+
+print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%2")
+
+df_txn_cams = df_txn_cams.withColumn('new_rta_trxn_type', when(((F.col("RTA_TRXN_TYPE").isNull()) & (F.col("TR_TYPE").startswith('P'))),F.col("TR_TYPE").substr(1, 1)).otherwise(F.col("RTA_TRXN_TYPE")))
+df_txn_cams = df_txn_cams.withColumn('new_rta_trxn_type', when(((F.col("RTA_TRXN_TYPE").isNull()) & (F.col("TR_TYPE").startswith('R'))),F.col("TR_TYPE").substr(1, 1)).otherwise(F.col("new_rta_trxn_type")))
+df_txn_cams = df_txn_cams.withColumn('new_rta_trxn_type', when(((F.col("RTA_TRXN_TYPE").isNull()) & (F.col("TR_TYPE").startswith('D'))),F.col("TR_TYPE").substr(1, 2)).otherwise(F.col("new_rta_trxn_type")))
+df_txn_cams = df_txn_cams.withColumn('new_rta_trxn_type', when(((F.col("RTA_TRXN_TYPE").isNull()) & (F.col("TR_TYPE").startswith('S'))),F.col("TR_TYPE").substr(1, 2)).otherwise(F.col("new_rta_trxn_type")))
+df_txn_cams = df_txn_cams.withColumn('new_rta_trxn_type', when(((F.col("RTA_TRXN_TYPE").isNull()) & (F.col("TR_TYPE").startswith('T'))),F.col("TR_TYPE").substr(1, 2)).otherwise(F.col("new_rta_trxn_type")))
+
+print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+df_txn_cams.select('new_rta_trxn_type').distinct().show()
+
+print("count is..........",df_txn_cams.count())
+
+df_txn_cams1=df_txn_cams.join(df_txn_type,df_txn_cams.RTA_TRXN_TYPE==df_txn_type.trdesc,"left") 
+print("&&&&&&& LINE 143 &&&&&&&&&&")
+df_txn_cams1.printSchema()
+print("&&&&&&& LINE 145 &&&&&&&&&&")
+df_txn_cams2=df_txn_cams1.join(df_scheme,df_txn_cams1.RTA_TRXN_TYPE==df_scheme.amc_rta_code,"left") 
+df_txn_cams2.printSchema()
+print("&&&&&&& LINE 148 &&&&&&&&&&")
+df_txn_cams2 = df_txn_cams2.withColumn("ASSO_CODE",F.upper(F.col("ASSO_CODE")))
+df_txn_cams2.printSchema()
+df_txn_cams2.select('ASSO_CODE').distinct().show()
+
+# df2 = spark.sql("select *, case when df_txn_cams.RTA_TRXN_TYPE is NULL then case when left(df_txn_cams.TR_TYPE,1)='P' then left(df_txn_cams.TR_TYPE,2) else df_txn_cams.RTA_TRXN_TYPE end else df_txn_cams.RTA_TRXN_TYPE end from df_txn_cams where df_txn_cams.RTA_TRXN_TYPE is Null")
+
+df_txn_cams2.filter(df_txn_cams2.RTA_TRXN_TYPE != "TICOB")
+print('COUNT OF DF TXN CAMS AFTER REMOVING TICOB',df_txn_cams2.count())
+
+df_txn_cams2.drop('amc_rta_code','trdesc')
+
+# df_dup2 = df_txn_cams2.drop_duplicates(['SCH_CODE','AMC_CODE','FOLIO_NO','TRXN_NO','INV_NAME','TRXN_MODE','TRADE_DATE','POST_DT','UNITS','UNQNO','RTA_TRXN_TYPE','TR_TYPE','TRFLAG','LOAD_VAL','PAN','DP_ID','NEWUNQNO'])
+df_dup2 = df_txn_cams2.drop_duplicates(['AMC_CODE','FOLIO_NO','SCH_CODE','RTA_SCHEME','INV_NAME','TR_TYPE','TRXN_NO','TRXN_MODE','TRXNSTAT','BRANCHCODE','USRTRXNO','TRADE_DATE','POST_DT','NAV','UNITS','SEQ_NO'])
+
+print('COUNT OF TXN AFTER DROPPING DUPLICATES',df_dup2.count())

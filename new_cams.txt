@@ -1,0 +1,153 @@
+from dbfread import DBF
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import glob
+import os
+import mysql.connector as connection
+import mysql.connector as connection
+from datetime import date, datetime, timedelta
+import mysql.connector
+import openpyxl
+from sqlalchemy import create_engine
+from datetime import datetime
+
+import warnings
+warnings.filterwarnings("ignore")
+
+# Current time and formats it to the North American time of Month, Day, and Year.
+now = datetime.now()
+dt_string = now.strftime("%m-%d-%Y_%H-%M")
+#create directory
+if not os.path.exists('log'):
+    os.makedirs('log')
+sourceFile = open('output_log.txt'+"_" + dt_string, 'w')
+
+cnx = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+cnx2 = mysql.connector.connect(
+  host="localhost",
+  user="root",
+  password="12345",
+  database="sapient"
+)
+engine = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+engine1 = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+engine2 = create_engine('mysql+pymysql://root:12345@localhost/sapient')
+print(engine)
+##########################################
+sql_sap_master2 = "select SAP_SCH_NAME,AMC_RTA_CODE from sap_scheme_master where RTA = 'CAMS';"
+sql_sap_master_df2 = pd.read_sql(sql_sap_master2,cnx)
+sql_sap_master_df2.rename(columns={'SAP_SCH_NAME':'SCHEME'}, inplace = True)
+sql_sap_master_df2.rename(columns={'AMC_RTA_CODE':'SCH_CODE'}, inplace = True)
+# print(sql_sap_master_df2)
+
+txn_type_master2 = "select SAP_Trxn_Code,SAP_Trxn_Type,TRDESC from txn_type_master where RTA = 'CAMS';"
+txn_type_master_df2 = pd.read_sql(txn_type_master2,cnx)
+txn_type_master_df2.rename(columns={'TRDESC':'RTA_TRXN_TYPE'}, inplace = True)
+txn_type_master_df2.rename(columns={'SAP_Trxn_Type':'SAP_TRXN_TYPE'}, inplace = True)
+txn_type_master_df2.rename(columns={'SAP_Trxn_Code':'SAP_TRXN_CODE'}, inplace = True)
+# print(txn_type_master_df2)
+
+
+files2 = glob.glob("E:\\Sapient Files\\CAMS\\PPFAS.DBF")
+frame2 = []
+# for file in files2:
+#     dbf1 = DBF(file,encoding='ISO-8859-1')
+#     frame2.append(pd.DataFrame(iter(dbf1)))
+# df2 = pd.concat(frame2)
+for file in files2:
+    print(file[36:-4])
+    source_filename_C = file[36:-4]
+    print(source_filename_C)
+    dbf1 = DBF(file,encoding='ISO-8859-1')
+    dbf3 = pd.DataFrame(iter(dbf1))
+    dbf3.loc[:, 'FILE_NAME'] = source_filename_C
+    frame2.append(pd.DataFrame(dbf3))
+df2 = pd.concat(frame2)
+
+
+df2.rename(columns = {'INV_NAME':'INV_NAME','PAN':'PAN','AMC_CODE':'AMC_CODE','PRODCODE':'SCH_CODE','SCHEME':'RTA_SCHEME',
+                      'FOLIO_NO':'FOLIO_NO','TRXNTYPE':'TR_TYPE','TRXNMODE':'TRXN_MODE','TRXN_TYPE_':'RTA_TRXN_TYPE',
+                      'TRXNNO':'TRXN_NO','TRADDATE':'TRADE_DATE','POSTDATE':'POST_DT','LOAD':'LOAD_VAL','PURPRICE':'NAV',
+                      'UNITS':'UNITS','AMOUNT':'RTA_AMT','STAMP_DUTY':'STAMP','STT':'STT','TOTAL_TAX':'TDS',
+                      'TRXN_NATUR':'TRXN_DETAIL','TRXN_SUFFI':'TRXN_REMARK','TER_LOCATI':'CITY_CAT','TAX_STATUS':'TAX_STATUS',
+                      'DP_ID':'DP_ID','TARG_SRC_S':'SRC_TRGT_SCHEME','SIPTRXNNO':'SRC_TRGT_SCHEME_TRXN',
+                      'REINVEST_F':'DIV_OPTION','EUIN':'EUIN','SUB_BRK_AR':'ARN_ASSO','SUBBROK':'ASSO_CODE',
+                      'SRC_BRK_CO':'SRC_BROKER','OLD_FOLIO':'OLD_FOLIO','USERCODE':'BRANCHCODE','USRTRXNO':'USRTRXNO',
+                      'BROKCODE':'ARN_MAIN','REP_DATE':'FILE_DATE'
+                }, inplace = True)
+print(df2.head())
+#'SYS_REGN_D':'SIP_REGN_DT',
+print(df2.info())
+############# DROPPING SPECIFIC COLUMN TO NEW DATAFRAME
+print('THE LENGTH OF CAMS FILE IS ',len(df2))
+# df2 = df2.drop(['FILE_DATE'], axis=1)
+df2 = df2.drop(['SL_NO','FILE_DATE'], axis=1)
+# print('LENGTH OF CAMS FILE FROM SQL ',len(df_file1))
+# df2 = df_file1.append(df2)
+print('AFTER APPENDING TWO CAMS FILE ',len(df2))
+######################## CREATING TWO DATAFRAME FOR SAP_TRXN_TYPE #######
+df_NULL = df2[(df2['RTA_TRXN_TYPE'].isnull())  | (df2['RTA_TRXN_TYPE']=='')]
+print(len(df_NULL))
+df_NOT_NULL = df2[df2['RTA_TRXN_TYPE'] !='']
+print(len(df_NOT_NULL))
+df_NULL['RTA_TRXN_TYPE'].replace('', np.nan,inplace=True)
+
+df_NULL['RTA_TRXN_TYPE'] = np.where((df_NULL['RTA_TRXN_TYPE'].isnull()) & (df_NULL['TR_TYPE'].str[0] == 'D'), df_NULL['TR_TYPE'].str[:2],df_NULL['RTA_TRXN_TYPE'])
+df_NULL['RTA_TRXN_TYPE'] = np.where((df_NULL['RTA_TRXN_TYPE'].isnull()) & (df_NULL['TR_TYPE'].str[0] == 'P'), df_NULL['TR_TYPE'].str[0],df_NULL['RTA_TRXN_TYPE'])
+df_NULL['RTA_TRXN_TYPE'] = np.where((df_NULL['RTA_TRXN_TYPE'].isnull()) & (df_NULL['TR_TYPE'].str[0] == 'R'), df_NULL['TR_TYPE'].str[0],df_NULL['RTA_TRXN_TYPE'])
+df_NULL['RTA_TRXN_TYPE'] = np.where((df_NULL['RTA_TRXN_TYPE'].isnull()) & (df_NULL['TR_TYPE'].str[0] == 'S'), df_NULL['TR_TYPE'].str[:2],df_NULL['RTA_TRXN_TYPE'])
+df_NULL['RTA_TRXN_TYPE'] = np.where((df_NULL['RTA_TRXN_TYPE'].isnull()) & (df_NULL['TR_TYPE'].str[0] == 'T'), df_NULL['TR_TYPE'].str[:2],df_NULL['RTA_TRXN_TYPE'])
+print(df_NULL['RTA_TRXN_TYPE'].values)
+print('RTA_TRXN_TYPE IN DF_NULL ',df_NULL['RTA_TRXN_TYPE'].unique())
+
+result_df_append = df_NOT_NULL.append(df_NULL)
+print('RTA_TRXN_TYPE SHOULD NOT BE NULL HERE ',result_df_append['RTA_TRXN_TYPE'].unique())
+
+df2_2 = pd.merge(result_df_append,sql_sap_master_df2, on='SCH_CODE', how='left')
+df2_2 = pd.DataFrame(df2_2)
+print(len(df2_2))
+
+final_result =pd.merge(df2_2,txn_type_master_df2,on='RTA_TRXN_TYPE', how='left')
+print('df_NOT_NULL',len(final_result))
+
+
+final_result['ASSO_CODE'] = final_result['ASSO_CODE'].str.upper()
+result_CAMS1 = pd.DataFrame(final_result)
+
+print('FINAL RESULT IN DATAFRAME ',len(result_CAMS1))
+####################################### TICOB LOGIC
+# df_cams_q=result_CAMS1.drop_duplicates(subset=result_CAMS1.columns.difference(['LOCATION','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPERC','BROKCOMM','ALTFOLIO','TIME1','TRXNSUBTYP','APPLICATIO','TRXN_DETAIL','TAX','TDS','TE15H','MICR_NO','REMARKS','SWFLAG','OLD_FOLIO','DIV_OPTION','MULT_BROK','STT','LOCATION','SCHEME_TYP','TAX_STATUS','LOAD_VAL','SCANREFNO','PAN','INV_IIN','SRC_TRGT_SCHEME','RTA_TRXN_TYPE','TICOB_TRTY','TICOB_TRNO','TICOB_POST','DP_ID','TRXN_CHARG','ELIGIB_AMT','SRC_OF_TXN','TRXN_REMARK','SRC_TRGT_SCHEME_TRXN','CITY_CAT','EUIN','EUIN_VALID','EUIN_OPTED','ARN_ASSO','EXCH_DC_FL','SRC_BROKER','GST_STATE_','IGST_AMOUN','CGST_AMOUN','SGST_AMOUN','SYS_REGN_D','AC_NO','BANK_NAME','REVERSAL_C','EXCHANGE_F','CA_INITIAT','STAMP','FOLIO_OLD','SCHEME_FOL','AMC_REF_NO','REQUEST_RE','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+last = result_CAMS1[result_CAMS1['RTA_TRXN_TYPE']!='TICOB']
+#df_cams_ticob = result_CAMS1.query("RTA_TRXN_TYPE=='TICOB'")
+#print('LENGTH OF TICOB IN DF',len(df_cams_ticob))
+#df_final_a = result_CAMS1[result_CAMS1['FOLIO_NO'].isin(df_cams_ticob['FOLIO_NO']) & result_CAMS1['SCHEME'].isin(df_cams_ticob['SCHEME'])]
+#print('LENGTH OF TICOB from dataframe',len(df_final_a))
+#i6 = pd.MultiIndex.from_frame(result_CAMS1)
+#i4 = pd.MultiIndex.from_frame(df_final_a)
+#i5 = result_CAMS1[~i6.isin(i4)]
+#last = pd.DataFrame(i5)
+#print(len(i5))
+print('LENGTH OF NEW DF AFTER REMOVING TICOB',len(last))
+#################### REMOVING DUPLICATES in CAMS #######################
+result_duplicate2 = last.loc[last.duplicated(subset=last.columns.difference(['LOCATION','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPERC','BROKCOMM','ALTFOLIO','TIME1','TRXNSUBTYP','APPLICATIO','TRXN_DETAIL','TAX','TDS','TE_15H','MICR_NO','REMARKS','SWFLAG','OLD_FOLIO','DIV_OPTION','MULT_BROK','STT','LOCATION','SCHEME_TYP','TAX_STATUS','LOAD_VAL','SCANREFNO','PAN','INV_IIN','SRC_TRGT_SCHEME','RTA_TRXN_TYPE','TICOB_TRTY','TICOB_TRNO','TICOB_POST','DP_ID','TRXN_CHARG','ELIGIB_AMT','SRC_OF_TXN','TRXN_REMARK','SRC_TRGT_SCHEME_TRXN','CITY_CAT','EUIN','EUIN_VALID','EUIN_OPTED','ARN_ASSO','EXCH_DC_FL','SRC_BROKER','GST_STATE_','IGST_AMOUN','CGST_AMOUN','SGST_AMOUN','SYS_REGN_D','AC_NO','BANK_NAME','REVERSAL_C','EXCHANGE_F','CA_INITIAT','STAMP','FOLIO_OLD','SCHEME_FOL','AMC_REF_NO','REQUEST_RE','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep=False),:]
+result_duplicate2 = pd.DataFrame(result_duplicate2)
+# result_duplicate2.to_sql(con=engine1, name='txn_cams_17_feb_dup', if_exists='replace', index=False)
+print('LENGTH OF NEW DF AFTER DROPPING DUPLICATE ',len(result_duplicate2))
+
+# result_duplicate2 = result_CAMS1.loc[result_CAMS1.duplicated(subset=result_CAMS1.columns.difference(['RTA_SCHEME','BRANCHCODE','USRTRXNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKCOMM','TRXN_DETAIL','DIV_OPTION','STT','TAX_STATUS','SRC_TRGT_SCHEME','SRC_TRGT_SCHEME_TRXN','CITY_CAT','EUIN','ARN_ASSO','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep=False),:]
+
+# print("duplicate done",len(result_duplicate2))
+############### DROPPING ALL DUPLICATES FROM CAMS FILE EXCLUDING FILE_NAME #########
+# result_CAMS2 = result_CAMS1.drop_duplicates(subset=result_CAMS1.columns.difference(['RTA_SCHEME','BRANCHCODE','USRTRXNO','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKCOMM','TRXN_DETAIL','DIV_OPTION','STT','TAX_STATUS','SRC_TRGT_SCHEME','SRC_TRGT_SCHEME_TRXN','CITY_CAT','EUIN','ARN_ASSO','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+
+result_CAMS2 = last.drop_duplicates(subset=last.columns.difference(['LOCATION','RTA_AMT','ARN_MAIN','ASSO_CODE','BROKPERC','BROKCOMM','ALTFOLIO','TIME1','TRXNSUBTYP','APPLICATIO','TRXN_DETAIL','TAX','TDS','TE_15H','MICR_NO','REMARKS','SWFLAG','OLD_FOLIO','DIV_OPTION','MULT_BROK','STT','LOCATION','SCHEME_TYP','TAX_STATUS','LOAD_VAL','SCANREFNO','PAN','INV_IIN','SRC_TRGT_SCHEME','RTA_TRXN_TYPE','TICOB_TRTY','TICOB_TRNO','TICOB_POST','DP_ID','TRXN_CHARG','ELIGIB_AMT','SRC_OF_TXN','TRXN_REMARK','SRC_TRGT_SCHEME_TRXN','CITY_CAT','EUIN','EUIN_VALID','EUIN_OPTED','ARN_ASSO','EXCH_DC_FL','SRC_BROKER','GST_STATE_','IGST_AMOUN','CGST_AMOUN','SGST_AMOUN','SYS_REGN_D','AC_NO','BANK_NAME','REVERSAL_C','EXCHANGE_F','CA_INITIAT','STAMP','FOLIO_OLD','SCHEME_FOL','AMC_REF_NO','REQUEST_RE','FILE_NAME','SCHEME','SAP_TRXN_CODE','SAP_TRXN_TYPE']),keep='first')
+# result_CAMS2.to_sql(con=engine2, name='txn_cams_17_feb', if_exists='replace', index=False)
+
+# result_CAMS1.to_sql(con=engine2, name='txn_cams_oldfile', if_exists='replace', index=False)
+

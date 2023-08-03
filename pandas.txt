@@ -1,0 +1,31 @@
+#removing unmatching records from two dataframe
+
+i1 = pd.MultiIndex.from_frame(df1)
+i2 = pd.MultiIndex.from_frame(df_TI)
+i3 = df1[~i1.isin(i2)]
+print(i3)
+print(len(i3))
+
+#################################################
+
+# adding multiple condition and using .query
+
+import pandas as pd
+data = [{'id': 1, 'name': 'aditya' ,'lname':'dhuri','dname':'HR'},
+        {'id': 1, 'name': 'aditya' ,'lname':'xyz','dname':'TECH'},
+        {'id': 3, 'name': 'keshav' ,'lname':'ghodake','dname':'FIN'},
+        {'id': 3, 'name': 'keshav' ,'lname':'dhuri','dname':'HR'},
+        {'id': 5, 'name': 'sumit' ,'lname':'dhuri','dname':'HR'},
+        {'id': 6, 'name': 'ajinkya' ,'lname':'dhuri','dname':'TECH'},
+        {'id': 7, 'name': 'suraj' ,'lname':'dhuri','dname':'HR'},
+        {'id': 8, 'name': 'asd' ,'lname':'dhuri','dname':'FIN'},
+        {'id': 9, 'name': 'xyz' ,'lname':'dhuri','dname':'TECH'},
+        {'id': 10, 'name': 'xvg' ,'lname':'dhuri','dname':'ceo'}]
+df = pd.DataFrame(data)
+print(df)
+df1=df.query("dname=='HR'")
+print(df1)
+df3=df[df['id'].isin(df1['id']) & df['name'].isin(df1['name'])].query("dname!='HR'")
+print(df3)
+
+#####################################################################################
